@@ -91,6 +91,11 @@ dialog input,dialog select{width:100%;border:1px solid var(--line);border-radius
 .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
 .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.show{opacity:1}
+[hidden]{display:none!important}
+#liveInfo{font-weight:400;letter-spacing:0;color:var(--accent)}
+.help{font-size:13px;color:var(--muted);margin:6px 0 0;line-height:1.5}
+.help a{color:var(--accent)}
+#keyState{font-size:13px;margin-top:6px}
 header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
 #tabs{display:none}
 @media (pointer:coarse){
@@ -135,7 +140,7 @@ header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(
   <button id="pauseBtn" class="btn" disabled>일시정지</button>
   <span class="timer" id="timer">00:00</span>
   <span class="status" id="status"><span class="live"></span><span id="statusText">대기 중</span></span>
-  <button id="exportBtn" class="btn">내보내기</button>
+    <button id="installBtn" class="btn primary" hidden>앱 설치</button>
   <button id="settingsBtn" class="btn">설정</button>
 </header>
 
@@ -170,14 +175,14 @@ header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(
   </section>
 
   <section class="card" id="sumCard">
-    <h2>요약 · 할일<span class="sp"></span>
-      <button class="btn" id="copyPrompt" style="padding:2px 10px">요약 요청문 복사</button>
-      <button class="btn primary" id="sumBtn" style="padding:2px 10px">요약하기</button>
+    <h2>자동 요약 · 문서<span class="sp"></span><span id="liveInfo"></span>
+      <button class="btn" id="sumBtn" style="padding:2px 10px">다시 요약</button>
+      <button class="btn primary" id="shareBtn" style="padding:2px 10px">문서 저장·공유</button>
     </h2>
     <div class="scroll">
       <div class="sum-grid">
         <div>
-          <div id="summary"><p class="empty">녹음을 멈추면 전사 내용과 메모를 함께 요약합니다. (설정에서 Claude API 키를 넣으면 자동 요약)</p></div>
+          <div id="summary"><p class="empty">녹음하는 동안 1~2분마다 요약이 자동으로 쌓입니다. 녹음을 멈추면 최종 문서가 만들어져 기기에 저장됩니다.</p></div>
           <div id="audioBox" hidden><h3>녹음 파일</h3><audio id="player" controls></audio><a id="audioDl" class="btn" style="display:inline-block;margin-top:6px;text-decoration:none;color:var(--ink)">녹음 파일 저장</a></div>
         </div>
         <div>
@@ -192,16 +197,19 @@ header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(
 <nav id="tabs" aria-label="화면 전환">
   <button data-tab="trCard" class="on">전사</button>
   <button data-tab="memoCard">메모</button>
-  <button data-tab="sumCard">요약·할일</button>
+  <button data-tab="sumCard">요약·문서</button>
 </nav>
 
 <dialog id="settings">
   <h3 style="margin:0">설정</h3>
   <label for="apiKey">Claude API 키 (자동 요약용, 이 기기에만 저장)</label>
-  <input id="apiKey" type="password" placeholder="sk-ant-...">
+  <input id="apiKey" type="password" placeholder="sk-ant-api03-로 시작하는 키" autocomplete="off">
+  <p class="help">claude.ai 채팅 구독과는 별개입니다. <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a>에 같은 계정으로 로그인 → API Keys → Create Key로 만든 키를 붙여넣으세요. 사용한 만큼 요금이 나가므로 Billing에서 크레딧을 먼저 충전해야 합니다.</p>
+  <button class="btn" id="testKey" type="button" style="margin-top:8px">키 연결 확인</button>
+  <div id="keyState"></div>
   <label for="model">요약 모델</label>
   <select id="model">
-    <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (권장)</option>
+    <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (최종 문서 권장)</option>
     <option value="claude-haiku-5-5">Claude Haiku 5.5 (빠르고 저렴)</option>
     <option value="claude-opus-5-5">Claude Opus 5.5 (가장 정교)</option>
   </select>
@@ -232,9 +240,16 @@ const fmt = s => { s=Math.max(0,Math.floor(s)); const h=Math.floor(s/3600), m=Ma
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 let settings = Object.assign({apiKey:'', model:'claude-sonnet-5-5', lang:'ko-KR', sumStyle:'meeting'}, store.get('rn_settings', {}));
-$('settingsBtn').onclick = () => { $('apiKey').value=settings.apiKey; $('model').value=settings.model; $('lang').value=settings.lang; $('sumStyle').value=settings.sumStyle; $('settings').showModal(); };
+$('settingsBtn').onclick = () => openSettings(false);
 $('closeSet').onclick = () => $('settings').close();
 $('saveSet').onclick = () => { settings = {apiKey:$('apiKey').value.trim(), model:$('model').value, lang:$('lang').value, sumStyle:$('sumStyle').value}; store.set('rn_settings', settings); $('settings').close(); renderSummary(); toast('설정을 저장했습니다'); };
+$('testKey').onclick = async () => {
+  const k=$('apiKey').value.trim(); const st=$('keyState');
+  if(!k){ st.textContent='키를 먼저 붙여넣어 주세요.'; st.style.color='var(--warn)'; return; }
+  st.textContent='확인하는 중…'; st.style.color='var(--muted)';
+  try{ await callClaude('ok', 'claude-haiku-5-5', 5, k); st.textContent='연결되었습니다. [저장]을 누르면 자동 요약이 켜집니다.'; st.style.color='var(--accent)'; }
+  catch(e){ st.textContent=e.message; st.style.color='var(--rec)'; }
+};
 
 let notes = store.get('rn_notes', []);
 let cur = null;
@@ -329,6 +344,8 @@ async function startRecording(){
   recording=true; paused=false; accum=cur.duration||0; startAt=Date.now();
   tick=setInterval(()=>{ $('timer').textContent=fmt(elapsed()); },500);
   startRecog(); keepAwake(true);
+  lastSumSeg=cur.summary?cur.segs.length:0; lastSumAt=Date.now(); clearInterval(liveTimer); liveTimer=setInterval(liveTick,15000);
+  setLive(settings.apiKey?'자동 요약 켜짐':'API 키 없음 · 요약 꺼짐');
   $('recBtn').classList.add('on'); $('recLabel').textContent='녹음 종료'; $('pauseBtn').disabled=false; $('pauseBtn').textContent='일시정지';
   setStatus(true, SR? '녹음·전사 중':'녹음 중');
 }
@@ -343,7 +360,7 @@ function stopRecording(){
   $('recBtn').classList.remove('on'); $('recLabel').textContent='녹음 시작'; $('pauseBtn').disabled=true;
   setStatus(false,'녹음 완료'); $('timer').textContent=fmt(cur.duration);
   cur.memo=$('memo').innerHTML; saveAll();
-  if(settings.apiKey) summarize(); else toast('녹음이 끝났습니다. [요약하기]를 누르거나 설정에 API 키를 넣어 주세요');
+  clearInterval(liveTimer); finalize();
 }
 function showAudio(){
   const blob=new Blob(chunks,{type:mediaRec.mimeType||'audio/webm'});
@@ -390,65 +407,118 @@ const STYLE = {
   sermon:'설교·강의 노트. summary에는 본문(성경 구절이 있으면)과 핵심 요점 3~6개, decisions에는 삶의 적용점, todos에는 실천할 일을 넣으세요.',
   visit:'심방·상담 기록. summary에는 나눈 이야기 요점, decisions에는 기도제목, todos에는 후속 조치(연락, 방문, 전달할 것)를 넣으세요.'
 };
-function buildPrompt(){
+function buildPrompt(prev, segs){
   const memoText=memo.innerText.trim();
-  return `다음은 녹음을 실시간 전사한 내용과 그 시간에 쓴 메모입니다. 음성 인식 오류는 문맥으로 바로잡아 읽으세요.
+  const tx=segs.map(s=>`[${fmt(s.t)}] ${s.text}`).join('\n');
+  const head=`녹음을 실시간 전사한 내용과 메모를 정리합니다. 음성 인식 오류는 문맥으로 바로잡아 읽으세요.
 형식: ${STYLE[settings.sumStyle]}
 반드시 아래 JSON만 출력하세요(설명·코드블록 없이):
 {"title":"짧은 제목","summary":["..."],"decisions":["..."],"todos":[{"task":"...","owner":"","due":""}]}
-
+`;
+  if(prev) return head+`
+[지금까지의 요약]
+${JSON.stringify(prev)}
+[그 뒤에 새로 전사된 내용]
+${tx||'(없음)'}
+[메모]
+${memoText||'(없음)'}
+지금까지의 요약에 새 내용을 합쳐 전체를 다시 정리한 JSON을 출력하세요.`;
+  return head+`
 [제목] ${$('title').value||'(없음)'}
 [메모]
 ${memoText||'(없음)'}
 [전사]
-${transcriptText()||'(없음)'}`;
+${tx||'(없음)'}`;
 }
-$('copyPrompt').onclick=()=>copyText(buildPrompt(),'요약 요청문을 복사했습니다. Claude 채팅에 붙여넣으세요');
-
-async function summarize(){
-  if(!cur.segs.length && !memo.innerText.trim()){ toast('요약할 내용이 없습니다'); return; }
-  if(!settings.apiKey){ toast('설정에서 Claude API 키를 넣거나, [요약 요청문 복사]를 써 주세요'); return; }
-  $('sumBtn').disabled=true; $('summary').innerHTML='<p class="empty">요약하는 중입니다…</p>';
+async function callClaude(prompt, model, maxTokens, key){
+  let res;
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{
-      'content-type':'application/json','x-api-key':settings.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:settings.model,max_tokens:3000,messages:[{role:'user',content:buildPrompt()}]})});
-    const data=await res.json();
-    if(!res.ok) throw new Error(data?.error?.message||('HTTP '+res.status));
-    const text=data.content.map(c=>c.text||'').join('').replace(/```json|```/g,'').trim();
+    res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{
+      'content-type':'application/json','x-api-key':key||settings.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model,max_tokens:maxTokens||3000,messages:[{role:'user',content:prompt}]})});
+  }catch(e){ throw new Error('인터넷 연결을 확인해 주세요.'); }
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok){
+    const m=(data&&data.error&&data.error.message)||('HTTP '+res.status);
+    if(/x-api-key|authentication/i.test(m)||res.status===401) throw new Error('API 키가 올바르지 않습니다. platform.claude.com에서 만든 sk-ant-api03-로 시작하는 키를 붙여넣어 주세요.');
+    if(/credit|billing|balance/i.test(m)) throw new Error('API 크레딧이 부족합니다. platform.claude.com → Billing에서 충전해 주세요.');
+    if(res.status===429||res.status===529) throw new Error('요청이 많아 잠시 뒤 다시 요약합니다.');
+    throw new Error(m);
+  }
+  return data.content.map(c=>c.text||'').join('');
+}
+function setLive(t){ $('liveInfo').textContent=t; }
+let liveBusy=false, lastSumSeg=0, lastSumAt=0, liveTimer=null;
+function liveTick(){
+  if(!settings.apiKey || liveBusy || paused || !recording) return;
+  const chars=cur.segs.slice(lastSumSeg).reduce((a,s)=>a+s.text.length,0);
+  if(chars<120 || Date.now()-lastSumAt<60000) return;
+  summarize('live');
+}
+async function summarize(mode){
+  if(!settings.apiKey){ openSettings(true); return false; }
+  if(!cur.segs.length && !memo.innerText.trim()){ if(mode!=='live') toast('요약할 내용이 없습니다'); return false; }
+  liveBusy=true; $('sumBtn').disabled=true;
+  setLive(mode==='live'?'요약 업데이트 중…':'최종 문서 만드는 중…');
+  if(mode!=='live' && !cur.summary) $('summary').innerHTML='<p class="empty">요약하는 중입니다…</p>';
+  const upto=cur.segs.length;
+  try{
+    const live=mode==='live';
+    const prompt= live && cur.summary ? buildPrompt(cur.summary, cur.segs.slice(lastSumSeg,upto)) : buildPrompt(null, cur.segs.slice(0,upto));
+    const text=(await callClaude(prompt, live?'claude-haiku-5-5':settings.model, 3000)).replace(/```json|```/g,'').trim();
     const j=JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}')+1));
     cur.summary={summary:j.summary||[], decisions:j.decisions||[]};
-    if(j.title && !$('title').value.trim()) $('title').value=cur.title=j.title;
-    (j.todos||[]).forEach(t=>{ if(t && t.task && !cur.todos.some(x=>x.task===t.task)) cur.todos.push({task:t.task,owner:t.owner||'',due:t.due||'',done:false}); });
-    renderSummary(); renderTodos(); saveAll(); toast('요약을 마쳤습니다');
+    if(j.title && (!$('title').value.trim() || /^\d+월 \d+일 회의$/.test($('title').value))) $('title').value=cur.title=j.title;
+    const keep=cur.todos.filter(t=>!t.ai || t.done);
+    (j.todos||[]).forEach(t=>{ if(t && t.task && !keep.some(x=>x.task===t.task)) keep.push({task:t.task,owner:t.owner||'',due:t.due||'',done:false,ai:true}); });
+    cur.todos=keep;
+    lastSumSeg=upto; lastSumAt=Date.now();
+    const now=new Date(); setLive(`${live?'자동 요약':'최종 문서'} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`);
+    renderSummary(); renderTodos(); saveAll();
+    return true;
   }catch(e){
-    $('summary').innerHTML=`<p class="empty">요약하지 못했습니다: ${esc(e.message)}<br>API 키와 인터넷 연결을 확인하거나 [요약 요청문 복사]를 사용하세요.</p>`;
-  }finally{ $('sumBtn').disabled=false; }
+    setLive('요약 실패');
+    if(mode!=='live' || /API 키|크레딧/.test(e.message)) $('summary').innerHTML=`<p class="empty">요약하지 못했습니다: ${esc(e.message)}</p>`;
+    lastSumAt=Date.now();
+    return false;
+  }finally{ liveBusy=false; $('sumBtn').disabled=false; }
 }
-$('sumBtn').onclick=summarize;
+async function finalize(){
+  let ok=false;
+  if(settings.apiKey){ while(liveBusy) await new Promise(r=>setTimeout(r,300)); ok=await summarize('final'); }
+  saveDoc(false);
+  toast(ok?'최종 문서를 만들어 다운로드 폴더에 저장했습니다':(settings.apiKey?'요약은 실패했지만 전사·메모 문서는 저장했습니다':'전사·메모 문서를 저장했습니다. 설정에 API 키를 넣으면 요약도 자동으로 됩니다'));
+}
+$('sumBtn').onclick=()=>summarize('final');
 const SUMLABEL={meeting:['핵심 요약','결정사항'],sermon:['핵심 요점','적용'],visit:['나눈 이야기','기도제목']};
 function renderSummary(){
   const s=cur.summary, L=SUMLABEL[settings.sumStyle];
-  if(!s){ $('summary').innerHTML='<p class="empty">녹음을 멈추면 전사 내용과 메모를 함께 요약합니다. (설정에서 Claude API 키를 넣으면 자동 요약)</p>'; return; }
+  if(!s){ $('summary').innerHTML='<p class="empty">녹음하는 동안 1~2분마다 요약이 자동으로 쌓입니다. 녹음을 멈추면 최종 문서가 만들어져 기기에 저장됩니다.</p>'; return; }
   const list=a=>a.length?'<ul>'+a.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':'<p class="empty">없음</p>';
   $('summary').innerHTML=`<h3>${L[0]}</h3>${list(s.summary)}<h3>${L[1]}</h3>${list(s.decisions)}`;
 }
 
-$('exportBtn').onclick=()=>{
-  const s=cur.summary, L=SUMLABEL[settings.sumStyle];
-  let md=`# ${$('title').value||'제목 없음'}\n\n- 날짜: ${new Date(cur.created).toLocaleString('ko-KR')}\n- 길이: ${fmt(cur.duration||0)}\n\n`;
-  if(s){ md+=`## ${L[0]}\n${s.summary.map(x=>'- '+x).join('\n')}\n\n## ${L[1]}\n${s.decisions.map(x=>'- '+x).join('\n')}\n\n`; }
-  if(cur.todos.length) md+=`## 할일\n${cur.todos.map(t=>`- [${t.done?'x':' '}] ${t.task}${t.owner?' ('+t.owner+')':''}${t.due?' ~'+t.due:''}`).join('\n')}\n\n`;
-  md+=`## 메모\n${memo.innerText.trim()||'(없음)'}\n\n## 전사\n${transcriptText()||'(없음)'}\n`;
-  const name=`${($('title').value||'녹음노트').replace(/[\\/:*?"<>|]/g,'_')}.txt`;
-  const file=new File([md],name,{type:'text/plain'});
-  if(navigator.canShare && navigator.canShare({files:[file]})){
-    navigator.share({files:[file], title:name}).catch(()=>{});
-    return;
-  }
-  const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=name; a.click();
-  toast('노트를 파일로 저장했습니다');
-};
+function buildDoc(){
+  const s=cur.summary, L=SUMLABEL[settings.sumStyle], line='━━━━━━━━━━━━━━━━━━━━';
+  let d=`${$('title').value||'제목 없음'}\n${line}\n날짜: ${new Date(cur.created).toLocaleString('ko-KR')}\n녹음 길이: ${fmt(cur.duration||0)}\n\n`;
+  if(s){ d+=`■ ${L[0]}\n${s.summary.map(x=>'  • '+x).join('\n')}\n\n■ ${L[1]}\n${(s.decisions.length?s.decisions:['없음']).map(x=>'  • '+x).join('\n')}\n\n`; }
+  if(cur.todos.length) d+=`■ 할일\n${cur.todos.map(t=>`  ${t.done?'☑':'☐'} ${t.task}${t.owner?' ('+t.owner+')':''}${t.due?' ~'+t.due:''}`).join('\n')}\n\n`;
+  d+=`■ 메모\n${memo.innerText.trim()||'(없음)'}\n\n■ 전체 전사\n${transcriptText()||'(없음)'}\n`;
+  return d;
+}
+function docFile(){ const name=`${($('title').value||'녹음노트').replace(/[\\/:*?"<>|]/g,'_')}.txt`; return new File(['﻿'+buildDoc()],name,{type:'text/plain'}); }
+function saveDoc(share){
+  const file=docFile();
+  if(share && navigator.canShare && navigator.canShare({files:[file]})){ navigator.share({files:[file], title:file.name}).catch(()=>{}); return; }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
+  if(share) toast('문서를 다운로드 폴더에 저장했습니다');
+}
+$('shareBtn').onclick=()=>saveDoc(true);
+function openSettings(needKey){ $('apiKey').value=settings.apiKey; $('model').value=settings.model; $('lang').value=settings.lang; $('sumStyle').value=settings.sumStyle; $('keyState').textContent=needKey?'자동 요약을 쓰려면 API 키가 필요합니다.':''; $('keyState').style.color='var(--warn)'; $('settings').showModal(); }
+let deferredInstall=null;
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstall=e; $('installBtn').hidden=false; });
+window.addEventListener('appinstalled',()=>{ $('installBtn').hidden=true; toast('홈 화면에 설치했습니다'); });
+$('installBtn').onclick=async()=>{ if(!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice.catch(()=>{}); deferredInstall=null; $('installBtn').hidden=true; };
 
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));
@@ -472,6 +542,7 @@ if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serv
 if(!notes.length) notes.push(newNote());
 openNote(notes.slice().sort((a,b)=>b.created.localeCompare(a.created))[0].id);
 store.set('rn_notes', notes);
+if(!settings.apiKey && !store.get('rn_seen_intro', false)){ store.set('rn_seen_intro', true); setTimeout(()=>openSettings(true), 600); }
 })();
 </script>
 </body>
