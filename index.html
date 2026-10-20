@@ -104,6 +104,9 @@ dialog input,dialog select{width:100%;border:1px solid var(--line);border-radius
 .badge{display:inline-block;font-size:11px;line-height:1.6;padding:0 6px;border-radius:999px;background:var(--accent-soft);color:var(--accent);margin-right:4px}
 .meta-line{font-size:13px;color:var(--muted);margin:0 0 8px}
 #noteList{overflow:auto;flex:1;min-height:0}
+#installBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px max(16px,env(safe-area-inset-left));background:var(--accent-soft);color:var(--ink);font-size:14px;border-bottom:1px solid var(--line)}
+#installBar .grow{flex:1;min-width:200px}
+#installBar .x{border:none;background:none;font-size:18px;color:var(--muted);padding:4px 8px}
 header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
 #tabs{display:none}
 @media (pointer:coarse){
@@ -153,6 +156,7 @@ header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(
   <button id="installBtn" class="btn primary" hidden>앱 설치</button>
   <button id="settingsBtn" class="btn">설정</button>
 </header>
+<div id="installBar" hidden><span class="grow" id="installMsg"></span><button class="btn primary" id="installNow" hidden>지금 설치</button><button class="x" id="installClose" aria-label="닫기">✕</button></div>
 
 <main>
   <section class="card" id="notes">
@@ -621,9 +625,21 @@ async function receiveShared(){
 }
 function openSettings(needKey){ $('apiKey').value=settings.apiKey; $('model').value=settings.model; $('lang').value=settings.lang; $('sumStyle').value=settings.sumStyle; $('keyState').textContent=needKey?'자동 요약을 쓰려면 API 키가 필요합니다.':''; $('keyState').style.color='var(--warn)'; $('settings').showModal(); }
 let deferredInstall=null;
-window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstall=e; $('installBtn').hidden=false; });
-window.addEventListener('appinstalled',()=>{ $('installBtn').hidden=true; toast('홈 화면에 설치했습니다'); });
-$('installBtn').onclick=async()=>{ if(!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice.catch(()=>{}); deferredInstall=null; $('installBtn').hidden=true; };
+const isApp = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function updateInstallBar(){
+  const bar=$('installBar');
+  if(isApp() || store.get('rn_hide_install',0) > Date.now()){ bar.hidden=true; return; }
+  bar.hidden=false; $('installNow').hidden=!deferredInstall;
+  $('installMsg').innerHTML = deferredInstall
+    ? '<b>녹음노트를 앱으로 설치하세요.</b> 홈 화면 아이콘을 누르면 바로 열립니다.'
+    : '<b>앱으로 설치하는 방법:</b> 크롬 오른쪽 위 메뉴(⋮) → <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 누르세요. 삼성 인터넷은 메뉴(≡) → <b>현재 페이지 추가</b> → <b>홈 화면</b>입니다.';
+}
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstall=e; $('installBtn').hidden=false; updateInstallBar(); });
+window.addEventListener('appinstalled',()=>{ deferredInstall=null; $('installBtn').hidden=true; $('installBar').hidden=true; toast('설치했습니다. 이제 홈 화면의 녹음노트 아이콘으로 여세요'); });
+async function doInstall(){ if(!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice.catch(()=>{}); deferredInstall=null; $('installBtn').hidden=true; updateInstallBar(); }
+$('installBtn').onclick=doInstall; $('installNow').onclick=doInstall;
+$('installClose').onclick=()=>{ store.set('rn_hide_install', Date.now()+3*864e5); $('installBar').hidden=true; };
+setTimeout(updateInstallBar, 1500);
 
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));
