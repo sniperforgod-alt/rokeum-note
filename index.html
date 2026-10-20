@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>녹음노트</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1f6f5c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="녹음노트">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+:root{
+  --bg:#f5f6f4; --panel:#ffffff; --ink:#1d2321; --muted:#68716d; --line:#dde2df;
+  --accent:#1f6f5c; --accent-soft:#e3f0ec; --rec:#d23b2f; --rec-soft:#fbe7e5; --warn:#a86a00;
+  --font:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141917; --panel:#1c2220; --ink:#e7ece9; --muted:#9aa49f; --line:#2d3532;
+  --accent:#5cc2a6; --accent-soft:#1e3530; --rec:#ff6b5f; --rec-soft:#3a2120; --warn:#e0a640; color-scheme:dark;}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--font);display:flex;flex-direction:column}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,[contenteditable]:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 12px;font-size:14px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{font-weight:700;font-size:17px;margin-right:4px}
+#title{flex:1 1 220px;min-width:0;border:1px solid transparent;background:transparent;font:600 16px var(--font);color:var(--ink);padding:6px 8px;border-radius:8px}
+#title:hover,#title:focus{border-color:var(--line)}
+.rec-btn{display:flex;align-items:center;gap:8px;border:none;border-radius:999px;padding:8px 18px;background:var(--rec);color:#fff;font-weight:600}
+.rec-btn .dot{width:10px;height:10px;border-radius:50%;background:#fff}
+.rec-btn.on .dot{border-radius:2px}
+.timer{font:500 18px var(--mono);font-variant-numeric:tabular-nums;min-width:74px}
+.status{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.status .live{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.status.on .live{background:var(--rec);animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.status.on .live{animation:none}}
+main{flex:1;display:grid;grid-template-columns:220px minmax(0,1fr) minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;gap:12px;padding:12px 16px;min-height:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;min-height:0;min-width:0}
+.card h2{font-size:13px;letter-spacing:.04em;color:var(--muted);margin:0;padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.card h2 .sp{flex:1}
+.scroll{overflow:auto;flex:1;padding:12px 14px;min-height:0}
+#notes{grid-row:1 / span 2}
+#noteList{list-style:none;margin:0;padding:6px}
+#noteList li{padding:8px 10px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column}
+#noteList li:hover{background:var(--accent-soft)}
+#noteList li.active{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+#noteList .t{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#noteList .d{font-size:12px;color:var(--muted)}
+.seg{display:grid;grid-template-columns:52px 1fr;gap:8px;padding:3px 0}
+.seg .ts{font:500 12px var(--mono);color:var(--accent);padding-top:3px;cursor:pointer}
+.seg .tx{outline:none;border-radius:4px}
+.seg .tx:focus{background:var(--accent-soft)}
+#interim{color:var(--muted);font-style:italic}
+.empty{color:var(--muted);font-size:14px}
+.toolbar{display:flex;gap:4px;flex-wrap:wrap;padding:8px 10px;border-bottom:1px solid var(--line)}
+.toolbar button{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:3px 9px;font-size:13px}
+#memo{outline:none;min-height:100%}
+#memo table{border-collapse:collapse;width:100%;margin:6px 0}
+#memo td,#memo th{border:1px solid var(--line);padding:4px 6px;min-width:40px}
+#memo .stamp{font:500 12px var(--mono);color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:0 4px}
+#sumCard{grid-column:2 / span 2;max-height:42vh}
+.sum-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px}
+.sum-grid h3{font-size:14px;margin:0 0 6px}
+.sum-grid ul{margin:0 0 12px;padding-left:18px}
+.todo{display:flex;gap:8px;align-items:flex-start;padding:3px 0}
+.todo input{margin-top:5px;accent-color:var(--accent)}
+.todo.done span{text-decoration:line-through;color:var(--muted)}
+.todo .meta{font-size:12px;color:var(--muted)}
+.todo .x{margin-left:auto;border:none;background:none;color:var(--muted);padding:0 4px}
+#todoAdd{display:flex;gap:6px;margin-top:6px}
+#todoAdd input{flex:1;min-width:0;border:1px solid var(--line);border-radius:6px;padding:4px 8px;background:var(--bg);color:var(--ink);font:inherit;font-size:14px}
+.notice{font-size:13px;color:var(--warn);padding:8px 14px;border-top:1px solid var(--line)}
+audio{width:100%;height:36px;margin-top:4px}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);max-width:460px;width:calc(100% - 32px)}
+dialog::backdrop{background:rgba(0,0,0,.35)}
+dialog label{display:block;font-size:13px;color:var(--muted);margin-top:10px}
+dialog input,dialog select{width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg);color:var(--ink);font:inherit}
+.row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+#tabs{display:none}
+@media (pointer:coarse){
+  .btn,.toolbar button{min-height:40px;padding:8px 14px}
+  .rec-btn{min-height:46px;padding:10px 22px;font-size:16px}
+  .todo input{width:22px;height:22px}
+  #noteList li{padding:12px}
+  .seg .ts{font-size:13px}
+}
+@media (max-width:1180px){
+  main{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  #notes{display:none}
+  #sumCard{grid-column:1 / span 2}
+  body.show-notes #notes{display:flex;position:fixed;z-index:20;top:0;bottom:0;left:0;width:min(300px,85vw);border-radius:0;padding-top:env(safe-area-inset-top);box-shadow:0 0 0 100vmax rgba(0,0,0,.35)}
+  #listBtn{display:inline-block!important}
+}
+@media (max-width:820px){
+  body{height:100%}
+  header{gap:8px}
+  .brand{display:none}
+  #title{order:-1;flex-basis:100%}
+  #exportBtn,#settingsBtn{padding:6px 10px}
+  main{display:block;padding:10px max(12px,env(safe-area-inset-left)) 0;overflow:hidden}
+  main>.card{height:100%;display:none}
+  main>.card.on{display:flex}
+  #sumCard{max-height:none}
+  .sum-grid{grid-template-columns:1fr}
+  #tabs{display:flex;background:var(--panel);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+  #tabs button{flex:1;border:none;background:none;padding:12px 4px 10px;font-size:14px;color:var(--muted);border-top:3px solid transparent}
+  #tabs button.on{color:var(--accent);font-weight:600;border-top-color:var(--accent)}
+  main{flex:1;min-height:0}
+  body.show-notes #notes{display:flex}
+}
+</style>
+</head>
+<body>
+<header>
+  <button id="listBtn" class="btn" style="display:none" aria-label="노트 목록 열기">☰ 목록</button>
+  <span class="brand">녹음노트</span>
+  <input id="title" value="" placeholder="제목 (예: 교역자 회의)" aria-label="노트 제목">
+  <button id="recBtn" class="rec-btn"><span class="dot"></span><span id="recLabel">녹음 시작</span></button>
+  <button id="pauseBtn" class="btn" disabled>일시정지</button>
+  <span class="timer" id="timer">00:00</span>
+  <span class="status" id="status"><span class="live"></span><span id="statusText">대기 중</span></span>
+  <button id="exportBtn" class="btn">내보내기</button>
+  <button id="settingsBtn" class="btn">설정</button>
+</header>
+
+<main>
+  <section class="card" id="notes">
+    <h2>노트 목록<span class="sp"></span><button class="btn" id="newBtn" style="padding:2px 10px">+ 새 노트</button></h2>
+    <ul id="noteList"></ul>
+  </section>
+
+  <section class="card on" id="trCard">
+    <h2>실시간 전사<span class="sp"></span><button class="btn" id="copyTr" style="padding:2px 10px">복사</button></h2>
+    <div class="scroll" id="trScroll">
+      <div id="transcript"></div>
+      <div id="interim"></div>
+      <p class="empty" id="trEmpty">녹음을 시작하면 말한 내용이 여기에 바로 글로 적힙니다. 잘못 적힌 글자는 눌러서 고칠 수 있습니다.</p>
+    </div>
+    <div class="notice" id="srNotice" hidden></div>
+  </section>
+
+  <section class="card" id="memoCard">
+    <h2>메모장</h2>
+    <div class="toolbar">
+      <button data-cmd="bold"><b>굵게</b></button>
+      <button data-cmd="insertUnorderedList">• 목록</button>
+      <button data-cmd="insertOrderedList">1. 번호</button>
+      <button id="checkBtn">☐ 체크</button>
+      <button id="tableBtn">표 넣기</button>
+      <button id="stampBtn">⏱ 시간</button>
+      <button id="memoTodoBtn">선택 → 할일</button>
+    </div>
+    <div class="scroll"><div id="memo" contenteditable="true" spellcheck="false"></div></div>
+  </section>
+
+  <section class="card" id="sumCard">
+    <h2>요약 · 할일<span class="sp"></span>
+      <button class="btn" id="copyPrompt" style="padding:2px 10px">요약 요청문 복사</button>
+      <button class="btn primary" id="sumBtn" style="padding:2px 10px">요약하기</button>
+    </h2>
+    <div class="scroll">
+      <div class="sum-grid">
+        <div>
+          <div id="summary"><p class="empty">녹음을 멈추면 전사 내용과 메모를 함께 요약합니다. (설정에서 Claude API 키를 넣으면 자동 요약)</p></div>
+          <div id="audioBox" hidden><h3>녹음 파일</h3><audio id="player" controls></audio><a id="audioDl" class="btn" style="display:inline-block;margin-top:6px;text-decoration:none;color:var(--ink)">녹음 파일 저장</a></div>
+        </div>
+        <div>
+          <h3>할일</h3>
+          <div id="todos"></div>
+          <form id="todoAdd"><input id="todoInput" placeholder="할일 직접 추가"><button class="btn">추가</button></form>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<nav id="tabs" aria-label="화면 전환">
+  <button data-tab="trCard" class="on">전사</button>
+  <button data-tab="memoCard">메모</button>
+  <button data-tab="sumCard">요약·할일</button>
+</nav>
+
+<dialog id="settings">
+  <h3 style="margin:0">설정</h3>
+  <label for="apiKey">Claude API 키 (자동 요약용, 이 기기에만 저장)</label>
+  <input id="apiKey" type="password" placeholder="sk-ant-...">
+  <label for="model">요약 모델</label>
+  <select id="model">
+    <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (권장)</option>
+    <option value="claude-haiku-5-5">Claude Haiku 5.5 (빠르고 저렴)</option>
+    <option value="claude-opus-5-5">Claude Opus 5.5 (가장 정교)</option>
+  </select>
+  <label for="lang">전사 언어</label>
+  <select id="lang">
+    <option value="ko-KR">한국어</option>
+    <option value="en-US">English</option>
+  </select>
+  <label for="sumStyle">요약 형식</label>
+  <select id="sumStyle">
+    <option value="meeting">회의록 (결정사항·할일 중심)</option>
+    <option value="sermon">설교·강의 노트 (본문·요점·적용)</option>
+    <option value="visit">심방·상담 기록 (기도제목·후속조치)</option>
+  </select>
+  <div class="row"><button class="btn" id="closeSet">닫기</button><button class="btn primary" id="saveSet">저장</button></div>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+const toast = msg => { const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); };
+const fmt = s => { s=Math.max(0,Math.floor(s)); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60; const mm=String(m).padStart(2,'0'), ss=String(x).padStart(2,'0'); return h? h+':'+mm+':'+ss : mm+':'+ss; };
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+let settings = Object.assign({apiKey:'', model:'claude-sonnet-5-5', lang:'ko-KR', sumStyle:'meeting'}, store.get('rn_settings', {}));
+$('settingsBtn').onclick = () => { $('apiKey').value=settings.apiKey; $('model').value=settings.model; $('lang').value=settings.lang; $('sumStyle').value=settings.sumStyle; $('settings').showModal(); };
+$('closeSet').onclick = () => $('settings').close();
+$('saveSet').onclick = () => { settings = {apiKey:$('apiKey').value.trim(), model:$('model').value, lang:$('lang').value, sumStyle:$('sumStyle').value}; store.set('rn_settings', settings); $('settings').close(); renderSummary(); toast('설정을 저장했습니다'); };
+
+let notes = store.get('rn_notes', []);
+let cur = null;
+const newNote = () => ({ id: Date.now().toString(36), title:'', created:new Date().toISOString(), segs:[], memo:'', summary:null, todos:[], duration:0 });
+function saveAll(){ store.set('rn_notes', notes); renderList(); }
+let saveTimer;
+function autosave(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ cur.title=$('title').value; cur.memo=$('memo').innerHTML; saveAll(); }, 400); }
+
+function renderList(){
+  const ul=$('noteList'); ul.innerHTML='';
+  notes.slice().sort((a,b)=>b.created.localeCompare(a.created)).forEach(n=>{
+    const li=document.createElement('li'); if(cur && n.id===cur.id) li.className='active';
+    const d=new Date(n.created);
+    li.innerHTML=`<span class="t">${esc(n.title||'제목 없음')}</span><span class="d">${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} · ${fmt(n.duration||0)}</span>`;
+    li.onclick=()=>{ if(recording){ toast('녹음 중에는 다른 노트로 바꿀 수 없습니다'); return; } openNote(n.id); };
+    ul.appendChild(li);
+  });
+}
+function openNote(id){
+  cur = notes.find(n=>n.id===id);
+  $('title').value=cur.title; $('memo').innerHTML=cur.memo||'';
+  $('timer').textContent=fmt(cur.duration||0);
+  renderTranscript(); renderSummary(); renderTodos();
+  $('audioBox').hidden=true; renderList();
+}
+$('newBtn').onclick=()=>{ if(recording){ toast('녹음을 먼저 멈춰 주세요'); return; } const n=newNote(); notes.push(n); saveAll(); openNote(n.id); $('title').focus(); };
+$('title').addEventListener('input', autosave);
+
+function renderTranscript(){
+  const box=$('transcript'); box.innerHTML='';
+  cur.segs.forEach((s,i)=>box.appendChild(segEl(s,i)));
+  $('trEmpty').hidden = cur.segs.length>0;
+  $('interim').textContent='';
+}
+function segEl(s,i){
+  const d=document.createElement('div'); d.className='seg';
+  d.innerHTML=`<span class="ts" title="메모에 이 시간 넣기">${fmt(s.t)}</span><span class="tx" contenteditable="true" spellcheck="false"></span>`;
+  d.querySelector('.tx').textContent=s.text;
+  d.querySelector('.tx').addEventListener('input',e=>{ cur.segs[i].text=e.target.textContent; autosave(); });
+  d.querySelector('.ts').onclick=()=>insertStamp(s.t);
+  return d;
+}
+function addSeg(text, t){
+  text=text.trim(); if(!text) return;
+  const s={t, text}; cur.segs.push(s);
+  $('transcript').appendChild(segEl(s, cur.segs.length-1));
+  $('trEmpty').hidden=true;
+  const sc=$('trScroll'); if(sc.scrollHeight-sc.scrollTop-sc.clientHeight<120) sc.scrollTop=sc.scrollHeight;
+  autosave();
+}
+const transcriptText = () => cur.segs.map(s=>`[${fmt(s.t)}] ${s.text}`).join('\n');
+async function copyText(t, ok){ try{ await navigator.clipboard.writeText(t); toast(ok); }catch(e){ toast('복사하지 못했습니다'); } }
+$('copyTr').onclick=()=>copyText(transcriptText(),'전사 내용을 복사했습니다');
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if(!SR){ $('srNotice').hidden=false; $('srNotice').textContent='이 브라우저는 실시간 전사를 지원하지 않습니다. 크롬(Chrome)으로 열어 주세요. 녹음과 메모는 그대로 됩니다.'; }
+let recording=false, paused=false, mediaRec=null, chunks=[], stream=null, recog=null;
+let startAt=0, accum=0, tick=null;
+const elapsed = () => accum + (recording && !paused ? (Date.now()-startAt)/1000 : 0);
+
+function setStatus(on, text){ $('status').classList.toggle('on', on); $('statusText').textContent=text; }
+
+function startRecog(){
+  if(!SR) return;
+  recog=new SR(); recog.lang=settings.lang; recog.continuous=true; recog.interimResults=true;
+  recog.onresult=e=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i];
+      if(r.isFinal) addSeg(r[0].transcript, Math.max(0, elapsed()-3));
+      else interim+=r[0].transcript;
+    }
+    $('interim').textContent=interim;
+  };
+  recog.onerror=e=>{
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){ $('srNotice').hidden=false; $('srNotice').textContent='마이크 사용이 막혀 있습니다. 주소창 왼쪽 아이콘에서 마이크를 허용해 주세요.'; }
+    else if(e.error==='network'){ $('srNotice').hidden=false; $('srNotice').textContent='실시간 전사는 인터넷 연결이 필요합니다. 연결을 확인해 주세요. 녹음은 계속됩니다.'; }
+  };
+  recog.onend=()=>{ if(recording && !paused){ setTimeout(()=>{ try{ recog.start(); }catch(e){} }, 250); } };
+  try{ recog.start(); }catch(e){}
+}
+function stopRecog(){ if(recog){ recog.onend=null; try{ recog.stop(); }catch(e){} recog=null; } $('interim').textContent=''; }
+
+async function startRecording(){
+  try{ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}}); }
+  catch(e){ toast('마이크를 사용할 수 없습니다. 브라우저에서 마이크를 허용해 주세요'); return; }
+  if(cur.segs.length===0 && !cur.title){ const d=new Date(); $('title').value=cur.title=`${d.getMonth()+1}월 ${d.getDate()}일 회의`; }
+  chunks=[]; mediaRec=new MediaRecorder(stream);
+  mediaRec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+  mediaRec.onstop=showAudio;
+  mediaRec.start(1000);
+  recording=true; paused=false; accum=cur.duration||0; startAt=Date.now();
+  tick=setInterval(()=>{ $('timer').textContent=fmt(elapsed()); },500);
+  startRecog(); keepAwake(true);
+  $('recBtn').classList.add('on'); $('recLabel').textContent='녹음 종료'; $('pauseBtn').disabled=false; $('pauseBtn').textContent='일시정지';
+  setStatus(true, SR? '녹음·전사 중':'녹음 중');
+}
+function togglePause(){
+  if(!recording) return;
+  if(!paused){ paused=true; accum+= (Date.now()-startAt)/1000; mediaRec.pause(); stopRecog(); $('pauseBtn').textContent='다시 시작'; setStatus(false,'일시정지'); }
+  else { paused=false; startAt=Date.now(); mediaRec.resume(); startRecog(); $('pauseBtn').textContent='일시정지'; setStatus(true, SR?'녹음·전사 중':'녹음 중'); }
+}
+function stopRecording(){
+  cur.duration=elapsed(); recording=false; paused=false; clearInterval(tick);
+  stopRecog(); keepAwake(false); try{ mediaRec.stop(); }catch(e){} stream.getTracks().forEach(t=>t.stop());
+  $('recBtn').classList.remove('on'); $('recLabel').textContent='녹음 시작'; $('pauseBtn').disabled=true;
+  setStatus(false,'녹음 완료'); $('timer').textContent=fmt(cur.duration);
+  cur.memo=$('memo').innerHTML; saveAll();
+  if(settings.apiKey) summarize(); else toast('녹음이 끝났습니다. [요약하기]를 누르거나 설정에 API 키를 넣어 주세요');
+}
+function showAudio(){
+  const blob=new Blob(chunks,{type:mediaRec.mimeType||'audio/webm'});
+  const url=URL.createObjectURL(blob);
+  $('player').src=url; $('audioDl').href=url;
+  const ext=(blob.type.includes('mp4')?'m4a':'webm');
+  $('audioDl').download=`${($('title').value||'녹음').replace(/[\\/:*?"<>|]/g,'_')}.${ext}`;
+  $('audioBox').hidden=false;
+}
+$('recBtn').onclick=()=> recording ? stopRecording() : startRecording();
+$('pauseBtn').onclick=togglePause;
+window.addEventListener('beforeunload',e=>{ if(recording){ e.preventDefault(); e.returnValue=''; } });
+
+const memo=$('memo');
+memo.addEventListener('input', autosave);
+document.querySelectorAll('[data-cmd]').forEach(b=>b.onclick=()=>{ memo.focus(); document.execCommand(b.dataset.cmd); autosave(); });
+function insertHTML(html){ memo.focus(); document.execCommand('insertHTML', false, html); autosave(); }
+function insertStamp(t){ insertHTML(`<span class="stamp" contenteditable="false">${fmt(t===undefined?elapsed():t)}</span>&nbsp;`); }
+$('stampBtn').onclick=()=>insertStamp();
+$('checkBtn').onclick=()=>insertHTML('☐&nbsp;');
+memo.addEventListener('click',e=>{
+  const sel=window.getSelection(); if(!sel.rangeCount) return;
+  const n=sel.anchorNode; if(n && n.nodeType===3){ const o=sel.anchorOffset, s=n.textContent; const i=s[o]==='☐'||s[o]==='☑'?o:(s[o-1]==='☐'||s[o-1]==='☑'?o-1:-1); if(i>=0 && e.detail===1){ n.textContent=s.slice(0,i)+(s[i]==='☐'?'☑':'☐')+s.slice(i+1); autosave(); } }
+});
+$('tableBtn').onclick=()=>{ let h='<table><tbody>'; for(let r=0;r<3;r++){ h+='<tr>'+'<td>&nbsp;</td>'.repeat(3)+'</tr>'; } insertHTML(h+'</tbody></table><p><br></p>'); };
+$('memoTodoBtn').onclick=()=>{ const t=window.getSelection().toString().trim(); if(!t){ toast('메모에서 할일로 옮길 글을 먼저 선택하세요'); return; } t.split('\n').map(x=>x.replace(/^[☐☑•\-\d.\s]+/,'').trim()).filter(Boolean).forEach(x=>cur.todos.push({task:x,owner:'',due:'',done:false})); renderTodos(); saveAll(); toast('할일에 추가했습니다'); };
+document.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='m'){ e.preventDefault(); insertStamp(); } });
+
+function renderTodos(){
+  const box=$('todos'); box.innerHTML='';
+  if(!cur.todos.length){ box.innerHTML='<p class="empty">요약하면 할일이 자동으로 정리됩니다.</p>'; return; }
+  cur.todos.forEach((t,i)=>{
+    const d=document.createElement('div'); d.className='todo'+(t.done?' done':'');
+    d.innerHTML=`<input type="checkbox" ${t.done?'checked':''} aria-label="완료"><div><span>${esc(t.task)}</span>${(t.owner||t.due)?`<div class="meta">${esc([t.owner,t.due].filter(Boolean).join(' · '))}</div>`:''}</div><button class="x" title="삭제">✕</button>`;
+    d.querySelector('input').onchange=e=>{ t.done=e.target.checked; renderTodos(); saveAll(); };
+    d.querySelector('.x').onclick=()=>{ cur.todos.splice(i,1); renderTodos(); saveAll(); };
+    box.appendChild(d);
+  });
+}
+$('todoAdd').onsubmit=e=>{ e.preventDefault(); const v=$('todoInput').value.trim(); if(!v) return; cur.todos.push({task:v,owner:'',due:'',done:false}); $('todoInput').value=''; renderTodos(); saveAll(); };
+
+const STYLE = {
+  meeting:'회의록. summary에는 핵심 논의 3~6개, decisions에는 결정된 사항, todos에는 해야 할 일(담당자·기한이 언급되면 포함)을 넣으세요.',
+  sermon:'설교·강의 노트. summary에는 본문(성경 구절이 있으면)과 핵심 요점 3~6개, decisions에는 삶의 적용점, todos에는 실천할 일을 넣으세요.',
+  visit:'심방·상담 기록. summary에는 나눈 이야기 요점, decisions에는 기도제목, todos에는 후속 조치(연락, 방문, 전달할 것)를 넣으세요.'
+};
+function buildPrompt(){
+  const memoText=memo.innerText.trim();
+  return `다음은 녹음을 실시간 전사한 내용과 그 시간에 쓴 메모입니다. 음성 인식 오류는 문맥으로 바로잡아 읽으세요.
+형식: ${STYLE[settings.sumStyle]}
+반드시 아래 JSON만 출력하세요(설명·코드블록 없이):
+{"title":"짧은 제목","summary":["..."],"decisions":["..."],"todos":[{"task":"...","owner":"","due":""}]}
+
+[제목] ${$('title').value||'(없음)'}
+[메모]
+${memoText||'(없음)'}
+[전사]
+${transcriptText()||'(없음)'}`;
+}
+$('copyPrompt').onclick=()=>copyText(buildPrompt(),'요약 요청문을 복사했습니다. Claude 채팅에 붙여넣으세요');
+
+async function summarize(){
+  if(!cur.segs.length && !memo.innerText.trim()){ toast('요약할 내용이 없습니다'); return; }
+  if(!settings.apiKey){ toast('설정에서 Claude API 키를 넣거나, [요약 요청문 복사]를 써 주세요'); return; }
+  $('sumBtn').disabled=true; $('summary').innerHTML='<p class="empty">요약하는 중입니다…</p>';
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{
+      'content-type':'application/json','x-api-key':settings.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:settings.model,max_tokens:3000,messages:[{role:'user',content:buildPrompt()}]})});
+    const data=await res.json();
+    if(!res.ok) throw new Error(data?.error?.message||('HTTP '+res.status));
+    const text=data.content.map(c=>c.text||'').join('').replace(/```json|```/g,'').trim();
+    const j=JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}')+1));
+    cur.summary={summary:j.summary||[], decisions:j.decisions||[]};
+    if(j.title && !$('title').value.trim()) $('title').value=cur.title=j.title;
+    (j.todos||[]).forEach(t=>{ if(t && t.task && !cur.todos.some(x=>x.task===t.task)) cur.todos.push({task:t.task,owner:t.owner||'',due:t.due||'',done:false}); });
+    renderSummary(); renderTodos(); saveAll(); toast('요약을 마쳤습니다');
+  }catch(e){
+    $('summary').innerHTML=`<p class="empty">요약하지 못했습니다: ${esc(e.message)}<br>API 키와 인터넷 연결을 확인하거나 [요약 요청문 복사]를 사용하세요.</p>`;
+  }finally{ $('sumBtn').disabled=false; }
+}
+$('sumBtn').onclick=summarize;
+const SUMLABEL={meeting:['핵심 요약','결정사항'],sermon:['핵심 요점','적용'],visit:['나눈 이야기','기도제목']};
+function renderSummary(){
+  const s=cur.summary, L=SUMLABEL[settings.sumStyle];
+  if(!s){ $('summary').innerHTML='<p class="empty">녹음을 멈추면 전사 내용과 메모를 함께 요약합니다. (설정에서 Claude API 키를 넣으면 자동 요약)</p>'; return; }
+  const list=a=>a.length?'<ul>'+a.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':'<p class="empty">없음</p>';
+  $('summary').innerHTML=`<h3>${L[0]}</h3>${list(s.summary)}<h3>${L[1]}</h3>${list(s.decisions)}`;
+}
+
+$('exportBtn').onclick=()=>{
+  const s=cur.summary, L=SUMLABEL[settings.sumStyle];
+  let md=`# ${$('title').value||'제목 없음'}\n\n- 날짜: ${new Date(cur.created).toLocaleString('ko-KR')}\n- 길이: ${fmt(cur.duration||0)}\n\n`;
+  if(s){ md+=`## ${L[0]}\n${s.summary.map(x=>'- '+x).join('\n')}\n\n## ${L[1]}\n${s.decisions.map(x=>'- '+x).join('\n')}\n\n`; }
+  if(cur.todos.length) md+=`## 할일\n${cur.todos.map(t=>`- [${t.done?'x':' '}] ${t.task}${t.owner?' ('+t.owner+')':''}${t.due?' ~'+t.due:''}`).join('\n')}\n\n`;
+  md+=`## 메모\n${memo.innerText.trim()||'(없음)'}\n\n## 전사\n${transcriptText()||'(없음)'}\n`;
+  const name=`${($('title').value||'녹음노트').replace(/[\\/:*?"<>|]/g,'_')}.txt`;
+  const file=new File([md],name,{type:'text/plain'});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    navigator.share({files:[file], title:name}).catch(()=>{});
+    return;
+  }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=name; a.click();
+  toast('노트를 파일로 저장했습니다');
+};
+
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));
+  ['trCard','memoCard','sumCard'].forEach(id=>$(id).classList.toggle('on',id===b.dataset.tab));
+});
+$('listBtn').onclick=()=>document.body.classList.toggle('show-notes');
+$('noteList').addEventListener('click',()=>document.body.classList.remove('show-notes'));
+document.addEventListener('click',e=>{ if(document.body.classList.contains('show-notes') && !e.target.closest('#notes') && e.target.id!=='listBtn') document.body.classList.remove('show-notes'); });
+
+let wakeLock=null;
+async function keepAwake(on){
+  try{
+    if(on && 'wakeLock' in navigator){ wakeLock=await navigator.wakeLock.request('screen'); }
+    else if(!on && wakeLock){ await wakeLock.release(); wakeLock=null; }
+  }catch(e){}
+}
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && recording && !paused) keepAwake(true); });
+
+if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+
+if(!notes.length) notes.push(newNote());
+openNote(notes.slice().sort((a,b)=>b.created.localeCompare(a.created))[0].id);
+store.set('rn_notes', notes);
+})();
+</script>
+</body>
+</html>
