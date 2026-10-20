@@ -96,6 +96,14 @@ dialog input,dialog select{width:100%;border:1px solid var(--line);border-radius
 .help{font-size:13px;color:var(--muted);margin:6px 0 0;line-height:1.5}
 .help a{color:var(--accent)}
 #keyState{font-size:13px;margin-top:6px}
+.filters{display:flex;flex-direction:column;gap:6px;padding:8px 8px 4px;border-bottom:1px solid var(--line)}
+#search{border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:var(--bg);color:var(--ink);font:inherit;font-size:14px;min-width:0}
+#cats{display:flex;flex-wrap:wrap;gap:4px}
+#cats button{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--muted)}
+#cats button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.badge{display:inline-block;font-size:11px;line-height:1.6;padding:0 6px;border-radius:999px;background:var(--accent-soft);color:var(--accent);margin-right:4px}
+.meta-line{font-size:13px;color:var(--muted);margin:0 0 8px}
+#noteList{overflow:auto;flex:1;min-height:0}
 header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
 #tabs{display:none}
 @media (pointer:coarse){
@@ -140,13 +148,16 @@ header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(
   <button id="pauseBtn" class="btn" disabled>일시정지</button>
   <span class="timer" id="timer">00:00</span>
   <span class="status" id="status"><span class="live"></span><span id="statusText">대기 중</span></span>
-    <button id="installBtn" class="btn primary" hidden>앱 설치</button>
+    <button id="importBtn" class="btn">노트 가져오기</button>
+  <input type="file" id="importFile" multiple accept=".txt,.md,.pdf,.docx,image/*,text/plain,application/pdf" hidden>
+  <button id="installBtn" class="btn primary" hidden>앱 설치</button>
   <button id="settingsBtn" class="btn">설정</button>
 </header>
 
 <main>
   <section class="card" id="notes">
     <h2>노트 목록<span class="sp"></span><button class="btn" id="newBtn" style="padding:2px 10px">+ 새 노트</button></h2>
+    <div class="filters"><input id="search" type="search" placeholder="노트 검색 (제목·내용)" aria-label="노트 검색"><div id="cats"></div></div>
     <ul id="noteList"></ul>
   </section>
 
@@ -253,21 +264,41 @@ $('testKey').onclick = async () => {
 
 let notes = store.get('rn_notes', []);
 let cur = null;
-const newNote = () => ({ id: Date.now().toString(36), title:'', created:new Date().toISOString(), segs:[], memo:'', summary:null, todos:[], duration:0 });
+const newNote = () => ({ id: Date.now().toString(36)+Math.random().toString(36).slice(2,6), title:'', created:new Date().toISOString(), segs:[], memo:'', summary:null, todos:[], duration:0 });
 function saveAll(){ store.set('rn_notes', notes); renderList(); }
 let saveTimer;
 function autosave(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ cur.title=$('title').value; cur.memo=$('memo').innerHTML; saveAll(); }, 400); }
 
+const CATS=['회의','설교·묵상','심방·상담','행정·일정','전도·행사','개인·기타'];
+let catFilter='', query='';
+const plain = h => { const d=document.createElement('div'); d.innerHTML=h||''; return d.textContent; };
+function matchNote(n){
+  if(catFilter && (n.category||'회의')!==catFilter) return false;
+  if(!query) return true;
+  const hay=(n.title+' '+plain(n.memo)+' '+(n.segs||[]).map(s=>s.text).join(' ')+' '+(n.summary?n.summary.summary.join(' '):'')+' '+(n.tags||[]).join(' ')).toLowerCase();
+  return query.toLowerCase().split(/\s+/).every(q=>hay.includes(q));
+}
+function renderCats(){
+  const box=$('cats'); box.innerHTML='';
+  const count=c=>notes.filter(n=>(n.category||'회의')===c).length;
+  [['',`전체 ${notes.length}`]].concat(CATS.filter(c=>count(c)).map(c=>[c,`${c} ${count(c)}`])).forEach(([c,label])=>{
+    const b=document.createElement('button'); b.textContent=label; if(c===catFilter) b.className='on';
+    b.onclick=()=>{ catFilter=c; renderCats(); renderList(); }; box.appendChild(b);
+  });
+}
 function renderList(){
   const ul=$('noteList'); ul.innerHTML='';
-  notes.slice().sort((a,b)=>b.created.localeCompare(a.created)).forEach(n=>{
+  notes.filter(matchNote).sort((a,b)=>b.created.localeCompare(a.created)).forEach(n=>{
     const li=document.createElement('li'); if(cur && n.id===cur.id) li.className='active';
     const d=new Date(n.created);
-    li.innerHTML=`<span class="t">${esc(n.title||'제목 없음')}</span><span class="d">${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} · ${fmt(n.duration||0)}</span>`;
+    const tag=(n.imported?'<span class="badge">갤럭시 노트</span>':'')+(n.category?`<span class="badge">${esc(n.category)}</span>`:'');
+    li.innerHTML=`<span class="t">${esc(n.title||'제목 없음')}</span><span class="d">${tag}${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}${n.imported?'':' · '+fmt(n.duration||0)}</span>`;
     li.onclick=()=>{ if(recording){ toast('녹음 중에는 다른 노트로 바꿀 수 없습니다'); return; } openNote(n.id); };
     ul.appendChild(li);
   });
+  if(!ul.children.length) ul.innerHTML='<li class="empty" style="cursor:default">찾는 노트가 없습니다</li>';
 }
+$('search').addEventListener('input',e=>{ query=e.target.value.trim(); renderList(); });
 function openNote(id){
   cur = notes.find(n=>n.id===id);
   $('title').value=cur.title; $('memo').innerHTML=cur.memo||'';
@@ -495,7 +526,8 @@ function renderSummary(){
   const s=cur.summary, L=SUMLABEL[settings.sumStyle];
   if(!s){ $('summary').innerHTML='<p class="empty">녹음하는 동안 1~2분마다 요약이 자동으로 쌓입니다. 녹음을 멈추면 최종 문서가 만들어져 기기에 저장됩니다.</p>'; return; }
   const list=a=>a.length?'<ul>'+a.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':'<p class="empty">없음</p>';
-  $('summary').innerHTML=`<h3>${L[0]}</h3>${list(s.summary)}<h3>${L[1]}</h3>${list(s.decisions)}`;
+  const meta=cur.category?`<p class="meta-line">분류: ${esc(cur.category)}${(cur.tags||[]).map(t=>' · #'+esc(t)).join('')}</p>`:'';
+  $('summary').innerHTML=`${meta}<h3>${L[0]}</h3>${list(s.summary)}<h3>${L[1]}</h3>${list(s.decisions)}`;
 }
 
 function buildDoc(){
@@ -514,6 +546,79 @@ function saveDoc(share){
   if(share) toast('문서를 다운로드 폴더에 저장했습니다');
 }
 $('shareBtn').onclick=()=>saveDoc(true);
+
+const loadScript = src => new Promise((ok,no)=>{ if(document.querySelector(`script[src="${src}"]`)) return ok(); const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=()=>no(new Error('인터넷 연결을 확인해 주세요')); document.head.appendChild(s); });
+const b64 = blob => new Promise((ok,no)=>{ const r=new FileReader(); r.onload=()=>ok(String(r.result).split(',')[1]); r.onerror=no; r.readAsDataURL(blob); });
+async function imageBlock(f){
+  const bmp=await createImageBitmap(f); const k=Math.min(1,1600/Math.max(bmp.width,bmp.height));
+  const c=document.createElement('canvas'); c.width=Math.round(bmp.width*k); c.height=Math.round(bmp.height*k);
+  const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(bmp,0,0,c.width,c.height);
+  const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.85));
+  return {type:'image',source:{type:'base64',media_type:'image/jpeg',data:await b64(blob)}};
+}
+async function readImport(it){
+  if(it.text!==undefined) return {text:it.text};
+  const f=it.file, n=f.name.toLowerCase();
+  if((f.type||'').startsWith('text/')||/\.(txt|md)$/.test(n)) return {text:await f.text()};
+  if(/\.docx$/.test(n)){ await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js'); const x=await mammoth.extractRawText({arrayBuffer:await f.arrayBuffer()}); return {text:x.value}; }
+  if(f.type==='application/pdf'||n.endsWith('.pdf')) return {doc:{type:'document',source:{type:'base64',media_type:'application/pdf',data:await b64(f)}}};
+  if((f.type||'').startsWith('image/')||/\.(jpe?g|png|webp|gif|heic)$/.test(n)) return {doc:await imageBlock(f)};
+  throw new Error('지원하지 않는 파일 형식입니다 (텍스트·PDF·워드·사진만 가능)');
+}
+const toHtml = t => esc(t).replace(/\n/g,'<br>');
+async function importOne(it){
+  const r=await readImport(it);
+  const n=newNote(); n.imported=true; n.category='개인·기타';
+  n.title=(it.name||'가져온 노트').replace(/\.[^.]+$/,'');
+  if(it.file && it.file.lastModified) n.created=new Date(it.file.lastModified).toISOString();
+  if(r.text!==undefined) n.memo=toHtml(r.text.trim());
+  if(settings.apiKey){
+    const instr=`갤럭시 노트(삼성 노트)에서 가져온 메모입니다. 읽고 정리하세요.
+category는 반드시 다음 중 하나: ${CATS.join(', ')}
+summary는 핵심 3~5개, decisions는 결정사항·기도제목·적용점 등 꼭 기억할 점, todos는 해야 할 일입니다.
+반드시 아래 JSON만 출력하세요(설명·코드블록 없이):
+{"title":"짧은 제목","category":"...","tags":["..."],"summary":["..."],"decisions":["..."],"todos":[{"task":"...","owner":"","due":""}]${r.doc?',"text":"문서나 사진에 적힌 내용 전체를 그대로 옮겨 적은 글"':''}}`;
+    const content=r.doc?[r.doc,{type:'text',text:instr}]:instr+'\n\n[노트 원문]\n'+r.text.slice(0,60000);
+    const out=(await callClaude(content,'claude-haiku-5-5',r.doc?8000:2500)).replace(/```json|```/g,'').trim();
+    let j=null; try{ j=JSON.parse(out.slice(out.indexOf('{'),out.lastIndexOf('}')+1)); }catch(e){}
+    if(j){
+      if(j.title) n.title=j.title;
+      if(CATS.includes(j.category)) n.category=j.category;
+      n.tags=(j.tags||[]).slice(0,5);
+      n.summary={summary:j.summary||[],decisions:j.decisions||[]};
+      n.todos=(j.todos||[]).filter(t=>t&&t.task).map(t=>({task:t.task,owner:t.owner||'',due:t.due||'',done:false,ai:true}));
+      if(r.doc && j.text) n.memo=toHtml(j.text);
+    } else if(r.doc) n.memo=toHtml(out);
+  } else if(r.doc) throw new Error('사진·PDF는 설정에 API 키를 넣어야 읽을 수 있습니다');
+  notes.push(n); return n;
+}
+async function importItems(items){
+  if(recording){ toast('녹음을 멈춘 뒤 가져와 주세요'); return; }
+  if(!items.length) return;
+  let ok=0, first=null, fail=[];
+  for(let i=0;i<items.length;i++){
+    toast(`노트 정리 중… (${i+1}/${items.length})`);
+    try{ const n=await importOne(items[i]); first=first||n; ok++; store.set('rn_notes', notes); }
+    catch(e){ fail.push((items[i].name||'노트')+': '+e.message); }
+  }
+  renderCats();
+  if(first) openNote(first.id); else renderList();
+  toast(fail.length?`${ok}개 정리 완료, ${fail.length}개 실패 — ${fail[0]}`:`갤럭시 노트 ${ok}개를 가져와 정리했습니다`);
+}
+$('importBtn').onclick=()=>$('importFile').click();
+$('importFile').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; importItems(fs.map(f=>({name:f.name,file:f}))); };
+async function receiveShared(){
+  if(!/[?&]shared=1/.test(location.search) || !('caches' in window)) return;
+  history.replaceState(null,'',location.pathname);
+  try{
+    const c=await caches.open('rokeum-share'); const metaRes=await c.match('./shared-meta'); if(!metaRes) return;
+    const meta=await metaRes.json(); const items=[];
+    if(meta.text && meta.text.trim()) items.push({name:(meta.title||meta.text.split('\n')[0]).slice(0,40), text:meta.text});
+    for(let i=0;i<meta.files.length;i++){ const res=await c.match('./shared-file-'+i); if(res){ const b=await res.blob(); items.push({name:meta.files[i].name, file:new File([b],meta.files[i].name,{type:meta.files[i].type,lastModified:meta.files[i].lastModified||Date.now()})}); } }
+    await caches.delete('rokeum-share');
+    importItems(items);
+  }catch(e){ toast('공유한 노트를 받지 못했습니다'); }
+}
 function openSettings(needKey){ $('apiKey').value=settings.apiKey; $('model').value=settings.model; $('lang').value=settings.lang; $('sumStyle').value=settings.sumStyle; $('keyState').textContent=needKey?'자동 요약을 쓰려면 API 키가 필요합니다.':''; $('keyState').style.color='var(--warn)'; $('settings').showModal(); }
 let deferredInstall=null;
 window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstall=e; $('installBtn').hidden=false; });
@@ -542,6 +647,7 @@ if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serv
 if(!notes.length) notes.push(newNote());
 openNote(notes.slice().sort((a,b)=>b.created.localeCompare(a.created))[0].id);
 store.set('rn_notes', notes);
+renderCats(); receiveShared();
 if(!settings.apiKey && !store.get('rn_seen_intro', false)){ store.set('rn_seen_intro', true); setTimeout(()=>openSettings(true), 600); }
 })();
 </script>
