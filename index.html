@@ -104,6 +104,9 @@ dialog input,dialog select{width:100%;border:1px solid var(--line);border-radius
 .badge{display:inline-block;font-size:11px;line-height:1.6;padding:0 6px;border-radius:999px;background:var(--accent-soft);color:var(--accent);margin-right:4px}
 .meta-line{font-size:13px;color:var(--muted);margin:0 0 8px}
 #noteList{overflow:auto;flex:1;min-height:0}
+#meter{width:56px;height:8px;border-radius:4px;background:var(--line);overflow:hidden;display:inline-block}
+#meterFill{display:block;height:100%;width:0;background:var(--accent);transition:width .1s}
+#srNotice a{color:#fff}
 #installBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px max(16px,env(safe-area-inset-left));background:var(--accent-soft);color:var(--ink);font-size:14px;border-bottom:1px solid var(--line)}
 #installBar .grow{flex:1;min-width:200px}
 #installBar .x{border:none;background:none;font-size:18px;color:var(--muted);padding:4px 8px}
@@ -150,7 +153,7 @@ header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(
   <button id="recBtn" class="rec-btn"><span class="dot"></span><span id="recLabel">녹음 시작</span></button>
   <button id="pauseBtn" class="btn" disabled>일시정지</button>
   <span class="timer" id="timer">00:00</span>
-  <span class="status" id="status"><span class="live"></span><span id="statusText">대기 중</span></span>
+  <span class="status" id="status"><span class="live"></span><span id="statusText">대기 중</span><span id="meter" hidden><span id="meterFill"></span></span></span>
     <button id="importBtn" class="btn">노트 가져오기</button>
   <input type="file" id="importFile" multiple accept=".txt,.md,.pdf,.docx,image/*,text/plain,application/pdf" hidden>
   <button id="installBtn" class="btn primary" hidden>앱 설치</button>
@@ -340,7 +343,28 @@ async function copyText(t, ok){ try{ await navigator.clipboard.writeText(t); toa
 $('copyTr').onclick=()=>copyText(transcriptText(),'전사 내용을 복사했습니다');
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-if(!SR){ $('srNotice').hidden=false; $('srNotice').textContent='이 브라우저는 실시간 전사를 지원하지 않습니다. 크롬(Chrome)으로 열어 주세요. 녹음과 메모는 그대로 됩니다.'; }
+let srFailed=false;
+const UA=navigator.userAgent, isAndroid=/Android/i.test(UA);
+const isChrome=/Chrome\//.test(UA) && !/SamsungBrowser|EdgA|OPR|; wv\)|KAKAOTALK|NAVER|DaumApps|Instagram|FBAN|FBAV|Line\//i.test(UA);
+const chromeUrl='intent://'+location.host+location.pathname+'#Intent;scheme=https;package=com.android.chrome;end';
+function showChromeHint(msg){
+  const n=$('srNotice'); n.hidden=false;
+  n.innerHTML=esc(msg)+' 말한 내용을 글로 받아 적는 기능은 <b>크롬(Chrome)</b>에서 됩니다.'+(isAndroid?` <a class="btn primary" style="display:inline-block;margin-top:6px;text-decoration:none" href="${chromeUrl}">크롬으로 열기</a>`:'');
+  try{ if(recording) $('statusText').textContent='녹음 중 · 전사 꺼짐'; }catch(e){}
+}
+if(!SR) showChromeHint('이 브라우저는 실시간 전사를 지원하지 않습니다. 녹음과 메모는 그대로 됩니다.');
+else if(isAndroid && !isChrome) showChromeHint('지금 쓰시는 브라우저(삼성 인터넷, 카카오톡 등 앱 안 브라우저)에서는 실시간 전사가 되지 않습니다. 녹음과 메모는 그대로 됩니다.');
+let meterCtx=null, meterRaf=0;
+function startMeter(){
+  try{
+    meterCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const an=meterCtx.createAnalyser(); an.fftSize=512; meterCtx.createMediaStreamSource(stream).connect(an);
+    const buf=new Uint8Array(an.fftSize); $('meter').hidden=false;
+    const loop=()=>{ an.getByteTimeDomainData(buf); let m=0; for(const v of buf) m=Math.max(m,Math.abs(v-128)); $('meterFill').style.width=Math.min(100,m/48*100)+'%'; meterRaf=requestAnimationFrame(loop); };
+    loop();
+  }catch(e){}
+}
+function stopMeter(){ cancelAnimationFrame(meterRaf); $('meter').hidden=true; try{ if(meterCtx) meterCtx.close(); }catch(e){} meterCtx=null; }
 let recording=false, paused=false, mediaRec=null, chunks=[], stream=null, recog=null;
 let startAt=0, accum=0, tick=null;
 const elapsed = () => accum + (recording && !paused ? (Date.now()-startAt)/1000 : 0);
@@ -360,10 +384,10 @@ function startRecog(){
     $('interim').textContent=interim;
   };
   recog.onerror=e=>{
-    if(e.error==='not-allowed'||e.error==='service-not-allowed'){ $('srNotice').hidden=false; $('srNotice').textContent='마이크 사용이 막혀 있습니다. 주소창 왼쪽 아이콘에서 마이크를 허용해 주세요.'; }
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){ srFailed=true; showChromeHint('이 브라우저에서는 실시간 전사가 막혀 있습니다. 녹음은 계속되고 있습니다.'); }
     else if(e.error==='network'){ $('srNotice').hidden=false; $('srNotice').textContent='실시간 전사는 인터넷 연결이 필요합니다. 연결을 확인해 주세요. 녹음은 계속됩니다.'; }
   };
-  recog.onend=()=>{ if(recording && !paused){ setTimeout(()=>{ try{ recog.start(); }catch(e){} }, 250); } };
+  recog.onend=()=>{ if(recording && !paused && !srFailed){ setTimeout(()=>{ try{ recog.start(); }catch(e){} }, 250); } };
   try{ recog.start(); }catch(e){}
 }
 function stopRecog(){ if(recog){ recog.onend=null; try{ recog.stop(); }catch(e){} recog=null; } $('interim').textContent=''; }
@@ -378,11 +402,11 @@ async function startRecording(){
   mediaRec.start(1000);
   recording=true; paused=false; accum=cur.duration||0; startAt=Date.now();
   tick=setInterval(()=>{ $('timer').textContent=fmt(elapsed()); },500);
-  startRecog(); keepAwake(true);
+  srFailed=false; startRecog(); keepAwake(true); startMeter();
   lastSumSeg=cur.summary?cur.segs.length:0; lastSumAt=Date.now(); clearInterval(liveTimer); liveTimer=setInterval(liveTick,15000);
   setLive(settings.apiKey?'자동 요약 켜짐':'API 키 없음 · 요약 꺼짐');
   $('recBtn').classList.add('on'); $('recLabel').textContent='녹음 종료'; $('pauseBtn').disabled=false; $('pauseBtn').textContent='일시정지';
-  setStatus(true, SR? '녹음·전사 중':'녹음 중');
+  setStatus(true, SR && (isChrome||!isAndroid) && !srFailed ? '녹음·전사 중':'녹음 중 · 전사 꺼짐');
 }
 function togglePause(){
   if(!recording) return;
@@ -391,7 +415,7 @@ function togglePause(){
 }
 function stopRecording(){
   cur.duration=elapsed(); recording=false; paused=false; clearInterval(tick);
-  stopRecog(); keepAwake(false); try{ mediaRec.stop(); }catch(e){} stream.getTracks().forEach(t=>t.stop());
+  stopRecog(); keepAwake(false); stopMeter(); try{ mediaRec.stop(); }catch(e){} stream.getTracks().forEach(t=>t.stop());
   $('recBtn').classList.remove('on'); $('recLabel').textContent='녹음 시작'; $('pauseBtn').disabled=true;
   setStatus(false,'녹음 완료'); $('timer').textContent=fmt(cur.duration);
   cur.memo=$('memo').innerHTML; saveAll();
