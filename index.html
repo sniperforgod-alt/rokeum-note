@@ -220,7 +220,8 @@ header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(
 
 <dialog id="settings">
   <h3 style="margin:0">설정</h3>
-  <label for="apiKey">Claude API 키 (자동 요약용, 이 기기에만 저장)</label>
+  <p class="help" style="margin-top:4px"><b>무료로 사용 중입니다.</b> 받아쓰기와 요약·결정사항·할일 정리는 모두 이 기기 안에서 무료로 됩니다. 아래 API 키는 넣지 않아도 됩니다.</p>
+  <label for="apiKey">고급(선택): Claude API 키 — 넣으면 AI가 더 자연스럽게 요약합니다 (유료)</label>
   <input id="apiKey" type="password" placeholder="sk-ant-api03-로 시작하는 키" autocomplete="off">
   <p class="help">claude.ai 채팅 구독과는 별개입니다. <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a>에 같은 계정으로 로그인 → API Keys → Create Key로 만든 키를 붙여넣으세요. 사용한 만큼 요금이 나가므로 Billing에서 크레딧을 먼저 충전해야 합니다.</p>
   <button class="btn" id="testKey" type="button" style="margin-top:8px">키 연결 확인</button>
@@ -404,7 +405,7 @@ async function startRecording(){
   tick=setInterval(()=>{ $('timer').textContent=fmt(elapsed()); },500);
   srFailed=false; startRecog(); keepAwake(true); startMeter();
   lastSumSeg=cur.summary?cur.segs.length:0; lastSumAt=Date.now(); clearInterval(liveTimer); liveTimer=setInterval(liveTick,15000);
-  setLive(settings.apiKey?'자동 요약 켜짐':'API 키 없음 · 요약 꺼짐');
+  setLive(settings.apiKey?'AI 자동 요약 켜짐':'무료 자동 정리 켜짐');
   $('recBtn').classList.add('on'); $('recLabel').textContent='녹음 종료'; $('pauseBtn').disabled=false; $('pauseBtn').textContent='일시정지';
   setStatus(true, SR && (isChrome||!isAndroid) && !srFailed ? '녹음·전사 중':'녹음 중 · 전사 꺼짐');
 }
@@ -507,15 +508,58 @@ async function callClaude(prompt, model, maxTokens, key){
   return data.content.map(c=>c.text||'').join('');
 }
 function setLive(t){ $('liveInfo').textContent=t; }
+const splitSentences = t => String(t||'').split(/\n+|(?<=[.!?。])\s+|(?<=(?:니다|어요|아요|해요|세요|까요|습니다|었다|했다|한다)[.!?]?)\s+(?=[가-힣A-Z0-9])/).map(s=>s.trim()).filter(s=>s.length>1);
+const STOP=new Set('그리고 그래서 그러면 그런데 하지만 그러니까 이제 그냥 이거 저거 그거 우리 저희 제가 내가 이번 다음 지금 오늘 정도 부분 경우 때문 하는 있는 없는 같은 이런 그런 저런 아주 너무 진짜 많이 다시 해서 하면 하고 했는데 합니다 있습니다 됩니다 같아요 거예요 거죠 그렇죠 그래요 네네 아니 일단 혹시 근데 이렇게 그렇게 어떻게 뭔가 약간 번째 안건 첫번째 두번째 세번째 시작하겠습니다 감사합니다 주세 주시 드립니다'.split(' '));
+const JOSA=/(으로부터|에서는|에서도|에게서|이라고|라고|으로|에서|에게|한테|까지|부터|처럼|보다|이랑|하고|이나|나|랑|은|는|이|가|을|를|에|로|와|과|도|만|의|요)$/;
+function words(s){ return (s.match(/[가-힣A-Za-z0-9]{2,}/g)||[]).map(w=>w.length>2?w.replace(JOSA,''):w).filter(w=>w.length>=2 && !STOP.has(w)); }
+const clip = s => { s=s.replace(/\s+/g,' ').trim(); return s.length>140? s.slice(0,138)+'…' : s; };
+const uniq = a => [...new Set(a)];
+const DEC=/(하기로|결정|확정|합의|정했|정하자|정합시다|으로 하죠|로 하죠|으로 합시다|로 합시다|진행하기로|승인|채택|통과)/;
+const TODO=/(해야|해 주세요|해주세요|해 주시|해주시|부탁|맡아|담당|준비해|준비하|확인해|확인하|연락|보내|제출|알아봐|챙겨|공지|예약|주문|섭외|작성해|올려|까지)/;
+function findDue(s){ const m=s.match(/(\d{1,2}월\s?\d{1,2}일|\d{1,2}\/\d{1,2}|다음\s?주\s?[월화수목금토일]?요?일?|이번\s?주\s?[월화수목금토일]?요?일?|내일|모레|[월화수목금토일]요일)/); return m?m[0].trim():''; }
+function findOwner(s){ const m=s.match(/[가-힣]{1,4}\s?(목사님|전도사님|장로님|권사님|집사님|선생님|팀장님|간사님|부장님|회장님)/); return m?m[0]:''; }
+function localAnalyze(sents){
+  sents=sents.map(s=>s.trim()).filter(Boolean);
+  const freq={}; sents.forEach(s=>new Set(words(s)).forEach(w=>freq[w]=(freq[w]||0)+1));
+  const keywords=Object.entries(freq).filter(([w,c])=>c>1).sort((a,b)=>b[1]-a[1]).map(x=>x[0]).slice(0,8);
+  const score=s=>{ const ws=words(s); if(ws.length<2) return 0; return ws.reduce((a,w)=>a+(freq[w]||0),0)/Math.sqrt(ws.length); };
+  const n=Math.max(3,Math.min(8,Math.round(sents.length/5)));
+  const pool=sents.map((s,i)=>({s,i,v:score(s)})).filter(x=>x.s.length>=8); const nonDec=pool.filter(x=>!DEC.test(x.s)&&!TODO.test(x.s));
+  const summary=uniq((nonDec.length>=2?nonDec:pool).sort((a,b)=>b.v-a.v).slice(0,n).sort((a,b)=>a.i-b.i).map(x=>clip(x.s)));
+  const decisions=uniq(sents.filter(s=>DEC.test(s)).map(clip)).slice(0,8);
+  const todos=uniq(sents.filter(s=>TODO.test(s)).map(clip)).slice(0,10).map(t=>({task:t,owner:findOwner(t),due:findDue(t),done:false,ai:true}));
+  return {summary, decisions, todos, keywords};
+}
+const CATRULES=[['설교·묵상',/설교|본문|말씀|묵상|큐티|성경|구절|\d+장\s?\d+절|복음|은혜/g],['심방·상담',/심방|상담|기도제목|병원|문병|위로|방문/g],['전도·행사',/전도|축제|행사|초청|수련회|바자회|담다|새가족|태신자/g],['행정·일정',/예산|결산|일정|주보|공지|행정|회계|제직회|당회|공동의회|보고/g],['회의',/회의|안건|논의|결정|의견|협의/g]];
+function guessCat(t){ let best='개인·기타', bv=0; CATRULES.forEach(([c,re])=>{ const v=(String(t).match(re)||[]).length*(c==='회의'?3:1); if(v>bv){ bv=v; best=c; } }); return best; }
+function localSummarize(mode){
+  const sents=[...cur.segs.map(s=>s.text), ...splitSentences(memo.innerText)];
+  if(!sents.join('').trim()){ if(mode!=='live') toast('정리할 내용이 없습니다'); return false; }
+  const a=localAnalyze(sents);
+  cur.summary={summary:a.summary, decisions:a.decisions};
+  cur.tags=a.keywords.slice(0,5); cur.category=guessCat(sents.join(' '));
+  const keep=cur.todos.filter(t=>!t.ai||t.done); a.todos.forEach(t=>{ if(!keep.some(x=>x.task===t.task)) keep.push(t); }); cur.todos=keep;
+  lastSumSeg=cur.segs.length; lastSumAt=Date.now();
+  const now=new Date(); setLive(`${mode==='live'?'자동 정리':'최종 정리'} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`);
+  renderSummary(); renderTodos(); saveAll(); return true;
+}
+async function pdfText(f){
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf=await pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise; let out='';
+  for(let p=1;p<=Math.min(pdf.numPages,50);p++){ const c=await (await pdf.getPage(p)).getTextContent(); out+=c.items.map(i=>i.str+(i.hasEOL?'\n':'')).join('')+'\n'; }
+  if(!out.trim()) throw new Error('이 PDF는 글자가 아닌 그림이라 무료 모드에서 읽을 수 없습니다. 삼성 노트에서 텍스트 파일로 공유해 주세요');
+  return out;
+}
 let liveBusy=false, lastSumSeg=0, lastSumAt=0, liveTimer=null;
 function liveTick(){
-  if(!settings.apiKey || liveBusy || paused || !recording) return;
+  if(liveBusy || paused || !recording) return;
   const chars=cur.segs.slice(lastSumSeg).reduce((a,s)=>a+s.text.length,0);
   if(chars<120 || Date.now()-lastSumAt<60000) return;
   summarize('live');
 }
 async function summarize(mode){
-  if(!settings.apiKey){ openSettings(true); return false; }
+  if(!settings.apiKey) return localSummarize(mode);
   if(!cur.segs.length && !memo.innerText.trim()){ if(mode!=='live') toast('요약할 내용이 없습니다'); return false; }
   liveBusy=true; $('sumBtn').disabled=true;
   setLive(mode==='live'?'요약 업데이트 중…':'최종 문서 만드는 중…');
@@ -544,12 +588,14 @@ async function summarize(mode){
 }
 async function finalize(){
   let ok=false;
-  if(settings.apiKey){ while(liveBusy) await new Promise(r=>setTimeout(r,300)); ok=await summarize('final'); }
+  while(liveBusy) await new Promise(r=>setTimeout(r,300));
+  ok=await summarize('final');
+  if(!ok && settings.apiKey) ok=localSummarize('final');
   saveDoc(false);
-  toast(ok?'최종 문서를 만들어 다운로드 폴더에 저장했습니다':(settings.apiKey?'요약은 실패했지만 전사·메모 문서는 저장했습니다':'전사·메모 문서를 저장했습니다. 설정에 API 키를 넣으면 요약도 자동으로 됩니다'));
+  toast(ok?'회의록을 정리해 다운로드 폴더에 저장했습니다':'전사·메모 문서를 저장했습니다');
 }
 $('sumBtn').onclick=()=>summarize('final');
-const SUMLABEL={meeting:['핵심 요약','결정사항'],sermon:['핵심 요점','적용'],visit:['나눈 이야기','기도제목']};
+const SUMLABEL={meeting:['논의 내용','결정사항'],sermon:['핵심 요점','적용'],visit:['나눈 이야기','기도제목']};
 function renderSummary(){
   const s=cur.summary, L=SUMLABEL[settings.sumStyle];
   if(!s){ $('summary').innerHTML='<p class="empty">녹음하는 동안 1~2분마다 요약이 자동으로 쌓입니다. 녹음을 멈추면 최종 문서가 만들어져 기기에 저장됩니다.</p>'; return; }
@@ -589,6 +635,7 @@ async function readImport(it){
   const f=it.file, n=f.name.toLowerCase();
   if((f.type||'').startsWith('text/')||/\.(txt|md)$/.test(n)) return {text:await f.text()};
   if(/\.docx$/.test(n)){ await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js'); const x=await mammoth.extractRawText({arrayBuffer:await f.arrayBuffer()}); return {text:x.value}; }
+  if((f.type==='application/pdf'||n.endsWith('.pdf')) && !settings.apiKey) return {text:await pdfText(f)};
   if(f.type==='application/pdf'||n.endsWith('.pdf')) return {doc:{type:'document',source:{type:'base64',media_type:'application/pdf',data:await b64(f)}}};
   if((f.type||'').startsWith('image/')||/\.(jpe?g|png|webp|gif|heic)$/.test(n)) return {doc:await imageBlock(f)};
   throw new Error('지원하지 않는 파일 형식입니다 (텍스트·PDF·워드·사진만 가능)');
@@ -617,7 +664,8 @@ summary는 핵심 3~5개, decisions는 결정사항·기도제목·적용점 등
       n.todos=(j.todos||[]).filter(t=>t&&t.task).map(t=>({task:t.task,owner:t.owner||'',due:t.due||'',done:false,ai:true}));
       if(r.doc && j.text) n.memo=toHtml(j.text);
     } else if(r.doc) n.memo=toHtml(out);
-  } else if(r.doc) throw new Error('사진·PDF는 설정에 API 키를 넣어야 읽을 수 있습니다');
+  } else if(r.doc) throw new Error('사진은 무료 모드에서 글자를 읽을 수 없습니다. 삼성 노트에서 텍스트 파일로 공유해 주세요');
+  else { const a=localAnalyze(splitSentences(r.text)); n.summary={summary:a.summary,decisions:a.decisions}; n.todos=a.todos; n.category=guessCat(r.text); n.tags=a.keywords.slice(0,4); if(!n.summary.summary.length && !n.todos.length) n.summary=null; }
   notes.push(n); return n;
 }
 async function importItems(items){
@@ -688,7 +736,7 @@ if(!notes.length) notes.push(newNote());
 openNote(notes.slice().sort((a,b)=>b.created.localeCompare(a.created))[0].id);
 store.set('rn_notes', notes);
 renderCats(); receiveShared();
-if(!settings.apiKey && !store.get('rn_seen_intro', false)){ store.set('rn_seen_intro', true); setTimeout(()=>openSettings(true), 600); }
+
 })();
 </script>
 </body>
